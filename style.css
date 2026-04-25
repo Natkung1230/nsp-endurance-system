@@ -1,0 +1,24 @@
+/* Optimized for Mobile */
+body { overflow-x: hidden; touch-action: manipulation; }
+.card-custom { background-color: #161b2c; border: 1px solid #2d3748; border-radius: 12px; }
+.card-kpi { background-color: #161b2c; border-radius: 8px; padding: 10px; border: 1px solid #2d3748; }
+.input-custom { background-color: #1a202c; border: 1px solid #2d3748; color: #fff; border-radius: 6px; width: 100%; padding: 6px 10px; font-size: 14px; outline: none; }
+.input-custom:focus { border-color: #3b82f6; }
+.label-custom { font-size: 9px; color: #718096; text-transform: uppercase; font-weight: bold; margin-bottom: 3px; display: block; }
+.stat-val { font-size: 1.5rem; line-height: 1; font-weight: 800; margin-top: 5px; }
+
+/* Desktop scaling */
+@media (min-width: 768px) {
+    .stat-val { font-size: 2rem; }
+}
+
+.loading-screen { display: flex; position: fixed; inset: 0; background: rgba(11,15,26,0.98); z-index: 9999; align-items: center; justify-content: center; flex-direction: column; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+
+/* Animation */
+.animate-scale-in { animation: scaleIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+@keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 10px; }
