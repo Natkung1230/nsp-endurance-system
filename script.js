@@ -1,60 +1,28 @@
-const scriptURL = "https://script.google.com/macros/s/AKfycbyKs40TqNTHZdYuEmwTMGDErVc4ZbQLQm7Qx79wA6ziSWhRX6LzBpuwCKxtUyxitEJo/exec"; 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-let tasks = [];
-let historyTasks = [];
-
-window.onload = () => {
-    initHistoryFilters();
-    loadFromLocalStorage(); 
-    fetchData(); 
-    
-    setInterval(saveToCloud, 20000); 
+const firebaseConfig = {
+  apiKey: "AIzaSyBYeYACELSfp9tkuxYEZ4-ixZydMO50wtA",
+  authDomain: "endurance-test-69a26.firebaseapp.com",
+  projectId: "endurance-test-69a26",
+  storageBucket: "endurance-test-69a26.firebasestorage.app",
+  messagingSenderId: "949464417018",
+  appId: "1:949464417018:web:69a6c5a055941e52627f43",
+  measurementId: "G-DF1D45Q840"
 };
 
-function loadFromLocalStorage() {
-    const savedTasks = localStorage.getItem('nsp_tasks');
-    const savedHistory = localStorage.getItem('nsp_history');
-    if(savedTasks) tasks = JSON.parse(savedTasks);
-    if(savedHistory) historyTasks = JSON.parse(savedHistory);
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let allData = { tasks: {}, history: {} };
+
+onValue(ref(db), (snapshot) => {
+    allData = snapshot.val() || { tasks: {}, history: {} };
     render();
-}
-
-async function fetchData() {
-    document.getElementById('loader').style.display = 'flex';
-    try {
-        const res = await fetch(scriptURL);
-        const data = await res.json();
-        if(data.tasks) tasks = data.tasks;
-        if(data.history) historyTasks = data.history;
-        render();
-        renderHistory();
-        console.log("Cloud synced successfully.");
-    } catch (e) { 
-        console.warn("Cloud offline, using local data.");
-    }
     document.getElementById('loader').style.display = 'none';
-}
+});
 
-async function saveToCloud() {
-    document.getElementById('save-indicator').innerHTML = `<i class="fas fa-sync-alt animate-spin"></i> Saving...`;
-    
-    localStorage.setItem('nsp_tasks', JSON.stringify(tasks));
-    localStorage.setItem('nsp_history', JSON.stringify(historyTasks));
-
-    try {
-        await fetch(scriptURL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({ action: "save", tasks, history: historyTasks })
-        });
-        document.getElementById('save-indicator').innerHTML = `<i class="fas fa-check-circle"></i> Cloud Synced`;
-        document.getElementById('last-save-time').innerText = `Saved: ${new Date().toLocaleTimeString()}`;
-    } catch (e) { 
-        document.getElementById('save-indicator').innerHTML = `<i class="fas fa-exclamation-triangle text-red-500"></i> Offline`;
-    }
-}
-
-function calcLogic() {
+window.calc = () => {
     const free = parseFloat(document.getElementById('in-free').value) || 0;
     const l1 = parseFloat(document.getElementById('in-l1').value) || 0;
     const l2 = parseFloat(document.getElementById('in-l2').value) || 0;
@@ -62,133 +30,119 @@ function calcLogic() {
     const pcs = parseFloat(document.getElementById('in-pcs').value) || 1;
     document.getElementById('out-stroke').value = (l1 - l2).toFixed(2);
     document.getElementById('out-load').value = ((free - l2) * rate * pcs).toFixed(2);
-}
+};
 
-function addTask() {
+document.getElementById('btn-add').onclick = () => {
     const partNo = document.getElementById('in-partno').value;
-    const dateStr = document.getElementById('in-date').value;
-    if(!partNo || !dateStr) return alert("กรุณากรอกข้อมูลให้ครบ!");
+    const date = document.getElementById('in-date').value;
+    if(!partNo || !date) return alert("กรุณากรอก Part No และ วันที่เริ่มครับ");
 
-    const hr = document.getElementById('in-hr').value.padStart(2,'0');
-    const min = document.getElementById('in-min').value.padStart(2,'0');
-    const start = new Date(`${dateStr}T${hr}:${min}:00`).getTime();
+    const id = Date.now();
+    const start = new Date(`${date}T${document.getElementById('in-hr').value.padStart(2,'0')}:${document.getElementById('in-min').value.padStart(2,'0')}:00`).getTime();
     const total = parseInt(document.getElementById('in-total').value);
     const speed = parseInt(document.getElementById('in-speed').value);
     const finish = start + (total / speed) * 60000;
 
-    tasks.push({
-        id: Date.now(),
-        machine: document.getElementById('in-machine').value,
+    set(ref(db, 'tasks/' + id), {
+        id, partNo, 
         customer: document.getElementById('in-customer').value,
-        partNo, lot: document.getElementById('in-lot').value,
-        pcs: document.getElementById('in-pcs').value,
+        machine: document.getElementById('in-machine').value,
+        lot: document.getElementById('in-lot').value,
         loadMax: document.getElementById('out-load').value,
-        total, start, finish,
+        total, start, finish, speed,
+        pcs: document.getElementById('in-pcs').value,
         l1: document.getElementById('in-l1').value,
-        l2: document.getElementById('in-l2').value,
-        free: document.getElementById('in-free').value,
-        rate: document.getElementById('in-rate').value
+        l2: document.getElementById('in-l2').value
     });
-
-    render();
-    saveToCloud();
     resetForm();
-}
+};
 
-setInterval(() => {
-    const now = Date.now();
-    let changed = false;
-    tasks.forEach((t, i) => {
-        if (now >= t.start) {
-            const prog = Math.min(100, ((now - t.start) / (t.finish - t.start)) * 100);
-            t.current_prog = prog;
-            t.current_cycles = (prog / 100) * t.total;
-            
-            if (now >= t.finish) {
-                t.current_prog = 100;
-                t.current_cycles = t.total;
-                historyTasks.push({...t, completedDate: now});
-                tasks.splice(i, 1);
-                renderHistory();
-            }
-            changed = true;
-        }
-    });
-    if(changed) {
-        render();
-        localStorage.setItem('nsp_tasks', JSON.stringify(tasks));
+window.delTask = (id, isHistory = false) => {
+    if(confirm("ยืนยันการลบ?")) {
+        const path = isHistory ? 'history/' : 'tasks/';
+        remove(ref(db, path + id));
     }
-    document.getElementById('clock').innerText = new Date().toLocaleString('th-TH');
-}, 1000);
+};
+
+window.showInfo = (id) => {
+    const t = allData.tasks[id];
+    if(!t) return;
+    document.getElementById('modalContent').innerHTML = `
+        <div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">Machine</span><span>${t.machine}</span></div>
+        <div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">Customer</span><span>${t.customer || '-'}</span></div>
+        <div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">Lot No</span><span>${t.lot || '-'}</span></div>
+        <div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">L1/L2</span><span>${t.l1}/${t.l2} mm</span></div>
+        <div class="flex justify-between pt-2"><span class="text-gray-500">Est. Finish</span><span class="text-yellow-500 font-bold">${new Date(t.finish).toLocaleString()}</span></div>
+    `;
+    document.getElementById('detailModal').classList.remove('hidden');
+    document.getElementById('detailModal').classList.add('flex');
+};
+
+window.closeModal = () => {
+    document.getElementById('detailModal').classList.add('hidden');
+    document.getElementById('detailModal').classList.remove('flex');
+};
 
 function render() {
-    const tbody = document.getElementById('running-table');
-    tbody.innerHTML = tasks.map(t => {
-        const prog = t.current_prog || 0;
+    const now = Date.now();
+    const tasks = Object.values(allData.tasks || {});
+    const history = Object.values(allData.history || {});
+
+    document.getElementById('running-table').innerHTML = tasks.sort((a,b) => b.id - a.id).map(t => {
+        const prog = Math.min(100, Math.max(0, ((now - t.start) / (t.finish - t.start)) * 100));
+        if(prog >= 100) {
+             set(ref(db, 'history/' + t.id), {...t, completedDate: now});
+             remove(ref(db, 'tasks/' + t.id));
+        }
         return `
-        <tr class="hover:bg-blue-900/10">
-            <td class="p-3 text-gray-500 font-mono text-[9px] uppercase">${t.machine}</td>
-            <td class="p-3 font-bold text-blue-400">${t.partNo}</td>
-            <td class="p-3 text-center">
-                <button onclick="showDetail(${t.id})" class="w-7 h-7 rounded-full bg-blue-500/20 text-blue-500"><i class="fas fa-info text-[10px]"></i></button>
+        <tr class="hover:bg-blue-900/5 transition-colors">
+            <td class="p-4 text-gray-500 font-mono text-[10px] uppercase">${t.machine}</td>
+            <td class="p-4 font-bold text-blue-400">${t.partNo}</td>
+            <td class="p-4 text-center">
+                <button onclick="showInfo(${t.id})" class="w-7 h-7 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-all"><i class="fas fa-search text-[10px]"></i></button>
             </td>
-            <td class="p-3 font-bold text-emerald-400 text-center">${t.loadMax}</td>
-            <td class="p-3">
-                <div class="bg-gray-800 h-1 rounded-full overflow-hidden mb-1"><div class="bg-blue-500 h-full" style="width:${prog}%"></div></div>
-                <div class="flex justify-between text-[8px] text-gray-500 font-mono">
-                    <span>${Math.floor(t.current_cycles || 0).toLocaleString()}</span>
-                    <span class="text-blue-400 font-bold">${prog.toFixed(1)}%</span>
+            <td class="p-4 text-emerald-400 font-bold text-center">${t.loadMax} N</td>
+            <td class="p-4">
+                <div class="bg-gray-800 h-1.5 rounded-full overflow-hidden mb-1"><div class="bg-blue-500 h-full" style="width:${prog}%"></div></div>
+                <div class="flex justify-between text-[9px] font-mono text-gray-500">
+                    <span>${Math.floor((prog/100)*t.total).toLocaleString()} / ${t.total.toLocaleString()}</span>
+                    <span class="text-blue-400">${prog.toFixed(1)}%</span>
                 </div>
             </td>
-            <td class="p-3 text-gray-400 font-mono text-[8px]">${new Date(t.finish).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</td>
-            <td class="p-3 text-center"><button onclick="deleteTask(${t.id})" class="text-gray-700 hover:text-red-500"><i class="fas fa-times text-xs"></i></button></td>
+            <td class="p-4 text-gray-400 font-mono text-[9px]">${new Date(t.finish).toLocaleString('th-TH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+            <td class="p-4 text-center"><button onclick="delTask(${t.id})" class="text-gray-700 hover:text-red-500"><i class="fas fa-trash-alt"></i></button></td>
         </tr>`;
     }).join('');
 
-    document.getElementById('stat-total').innerText = tasks.length + historyTasks.length;
-    document.getElementById('stat-running').innerText = tasks.filter(t => Date.now() >= t.start).length;
-    document.getElementById('stat-waiting').innerText = tasks.filter(t => Date.now() < t.start).length;
-    document.getElementById('stat-finished').innerText = historyTasks.length;
-}
-
-function renderHistory() {
-    const tbody = document.getElementById('history-table');
-    tbody.innerHTML = historyTasks.slice(-10).reverse().map(t => `
+    document.getElementById('history-table').innerHTML = history.slice(-10).reverse().map(t => `
         <tr class="border-b border-gray-800/50">
-            <td class="p-2 text-gray-600">${new Date(t.completedDate || t.finish).toLocaleDateString('th-TH')}</td>
-            <td class="p-2 font-bold text-blue-400/50">${t.partNo}</td>
-            <td class="p-2 uppercase text-gray-500">${t.machine}</td>
-            <td class="p-2 text-right font-mono">${t.total.toLocaleString()}</td>
+            <td class="p-3">${new Date(t.completedDate || t.finish).toLocaleDateString('th-TH')}</td>
+            <td class="p-3 font-bold text-blue-400/50">${t.partNo}</td>
+            <td class="p-3 text-center uppercase">${t.machine}</td>
+            <td class="p-3 text-center">${t.total.toLocaleString()}</td>
+            <td class="p-3 text-center"><span class="text-[9px] bg-emerald-900/20 text-emerald-500 px-2 py-0.5 rounded border border-emerald-800 font-bold">PASS</span></td>
         </tr>
     `).join('');
+
+    document.getElementById('stat-total').innerText = tasks.length + history.length;
+    document.getElementById('stat-running').innerText = tasks.filter(t => now >= t.start).length;
+    document.getElementById('stat-finished').innerText = history.length;
+    document.getElementById('stat-waiting').innerText = tasks.filter(t => now < t.start).length;
+    document.getElementById('stat-pass').innerText = history.length;
 }
 
-function resetForm() {
-    ['in-partno','in-customer','in-lot','in-free','in-l1','in-l2','in-rate'].forEach(f => document.getElementById(f).value = '');
-    calcLogic();
-}
+window.resetForm = () => {
+    ['in-partno','in-customer','in-lot','in-free','in-l1','in-l2','in-rate'].forEach(id => document.getElementById(id).value = '');
+    calc();
+};
 
-function initHistoryFilters() {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const mSelect = document.getElementById('hist-month');
-    months.forEach((m, i) => mSelect.innerHTML += `<option value="${i+1}">${m}</option>`);
-    mSelect.value = new Date().getMonth() + 1;
-}
+setInterval(() => {
+    document.getElementById('clock').innerText = new Date().toLocaleString('th-TH');
+    render();
+}, 1000);
 
-function showDetail(id) {
-    const t = tasks.find(x => x.id === id) || historyTasks.find(x => x.id === id);
-    if(!t) return;
-    document.getElementById('modalContent').innerHTML = `
-        <div class="flex justify-between border-b border-gray-800 pb-2 mb-2"><span class="text-gray-500 text-[10px] uppercase">Part Number</span><span class="text-white font-bold">${t.partNo}</span></div>
-        <div class="flex justify-between text-xs"><span class="text-gray-500">Machine</span><span>${t.machine}</span></div>
-        <div class="flex justify-between text-xs"><span class="text-gray-500">Customer</span><span>${t.customer || '-'}</span></div>
-        <div class="flex justify-between text-xs"><span class="text-gray-500">Load Max</span><span class="text-emerald-400 font-bold">${t.loadMax} N</span></div>
-        <div class="flex justify-between text-xs border-t border-gray-800 mt-2 pt-2"><span class="text-gray-500">Start</span><span>${new Date(t.start).toLocaleString('th-TH')}</span></div>
-        <div class="flex justify-between text-xs"><span class="text-gray-500">Estimate Finish</span><span class="text-yellow-500 font-bold">${new Date(t.finish).toLocaleString('th-TH')}</span></div>
-    `;
-    document.getElementById('detailModal').classList.remove('hidden');
-}
-
-function closeModal() { document.getElementById('detailModal').classList.add('hidden'); }
-function deleteTask(id) { if(confirm("ลบงาน?")) { tasks = tasks.filter(t => t.id !== id); render(); saveToCloud(); } }
 document.getElementById('in-date').valueAsDate = new Date();
+const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const mSelect = document.getElementById('hist-month');
+months.forEach((m, i) => mSelect.innerHTML += `<option value="${i+1}">${m}</option>`);
+mSelect.value = new Date().getMonth() + 1;
